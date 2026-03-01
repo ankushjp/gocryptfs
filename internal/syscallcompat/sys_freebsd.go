@@ -63,37 +63,8 @@ func Dup3(oldfd int, newfd int, flags int) (err error) {
 }
 
 // FchmodatNofollow is like Fchmodat but never follows symlinks.
-//
-// This should be handled by the AT_SYMLINK_NOFOLLOW flag, but Linux
-// does not implement it, so we have to perform an elaborate dance
-// with O_PATH and /proc/self/fd.
-//
-// See also: Qemu implemented the same logic as fchmodat_nofollow():
-// https://git.qemu.org/?p=qemu.git;a=blob;f=hw/9pfs/9p-local.c#l335
 func FchmodatNofollow(dirfd int, path string, mode uint32) (err error) {
-	// Open handle to the filename (but without opening the actual file).
-	// This succeeds even when we don't have read permissions to the file.
-	fd, err := unix.Openat(dirfd, path, unix.O_NOFOLLOW|O_PATH, 0)
-	if err != nil {
-		return err
-	}
-	defer unix.Close(fd)
-
-	// Now we can check the type without the risk of race-conditions.
-	// Return syscall.ELOOP if it is a symlink.
-	var st unix.Stat_t
-	err = unix.Fstat(fd, &st)
-	if err != nil {
-		return err
-	}
-	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
-		return unix.ELOOP
-	}
-
-	// Change mode of the actual file. Fchmod does not work with O_PATH,
-	// but Chmod via /proc/self/fd works.
-	procPath := fmt.Sprintf("/proc/self/fd/%d", fd)
-	return unix.Chmod(procPath, mode)
+	return unix.Fchmodat(dirfd, path, mode, unix.AT_SYMLINK_NOFOLLOW);
 }
 
 // LsetxattrUser runs the Lsetxattr syscall in the context of a different user.
